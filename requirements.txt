@@ -7,4 +7,4 @@ python-docx
 PyPDF2
 pandas
 openpyxl
-python-multipart 
+python-multipart
