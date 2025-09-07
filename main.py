@@ -5,7 +5,6 @@ from openai import OpenAI
 
 import os, tempfile
 from pptx import Presentation
-from pptx.util import Inches
 from PyPDF2 import PdfReader
 import docx
 import pandas as pd
@@ -14,10 +13,10 @@ from docx import Document
 # FastAPI 앱
 app = FastAPI()
 
-# ✅ CORS 허용 (테스트용: 모든 도메인 허용)
+# 🔹 CORS 허용 (GitHub Pages 주소만)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # 배포 시 특정 도메인만 넣는 게 안전함
+    allow_origins=["https://bh-1113.github.io"],  # GitHub Pages 도메인
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -61,6 +60,7 @@ def make_ppt(topic: str):
     # 본문
     for section in sections:
         text = generate_text(topic, section)
+
         slide = prs.slides.add_slide(prs.slide_layouts[1])
         slide.shapes.title.text = section
         slide.placeholders[1].text = text
@@ -89,9 +89,7 @@ def extract_text(file: UploadFile):
     if ext == "pdf":
         reader = PdfReader(tmp_path)
         for page in reader.pages:
-            page_text = page.extract_text()
-            if page_text:  # ✅ None 방지
-                text += page_text + "\n"
+            text += page.extract_text() + "\n"
 
     elif ext == "docx":
         doc = docx.Document(tmp_path)
