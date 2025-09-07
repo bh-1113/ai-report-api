@@ -1,49 +1,85 @@
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import FileResponse, JSONResponse
+from PyPDF2 import PdfReader
+from docx import Document
 from pptx import Presentation
-from pptx.util import Inches
+import pandas as pd
 import tempfile, os
 from openai import OpenAI
 
 app = FastAPI()
-
-# Render 환경변수에서 API Key 불러오기
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# 슬라이드 항목
-sections = ["개요", "필요성", "활용 사례", "장점과 한계", "미래 전망"]
+# 업로드된 요약 저장 (메모리 캐싱)
+last_summary = ""
 
-# GPT를 이용해 본문 텍스트 생성
-def generate_text(topic, section):
-    prompt = f"{topic}에 대해 '{section}' 파트의 발표 슬라이드 내용을 글머리표 3~4개로 작성해줘."
+def extract_text(file: UploadFile):
+    ext = file.filename.split(".")[-1].lower()
+    text = ""
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as tmp:
+        tmp.write(file.file.read())
+        tmp_path = tmp.name
+
+    if ext == "pdf":
+        reader = PdfReader(tmp_path)
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+    elif ext == "docx":
+        doc = Document(tmp_path)
+        for p in doc.paragraphs:
+            text += p.text + "\n"
+    elif ext == "pptx":
+        prs = Presentation(tmp_path)
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text"):
+                    text += shape.text + "\n"
+    elif ext in ["xlsx", "xls"]:
+        df = pd.read_excel(tmp_path)
+        text = df.to_string()
+    elif ext == "txt":
+        with open(tmp_path, "r", encoding="utf-8") as f:
+            text = f.read()
+
+    return text.strip()
+
+@app.post("/upload_summary")
+async def upload_summary(file: UploadFile = File(...)):
+    global last_summary
+    text = extract_text(file)
+
+    # GPT 요약
+    prompt = f"다음 문서를 한국어로 30% 분량으로 요약해줘:\n\n{text[:4000]}"
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}]
     )
-    return response.choices[0].message.content
+    last_summary = response.choices[0].message.content
 
-@app.get("/make_ppt")
-def make_ppt(topic: str):
-    prs = Presentation()
+    return JSONResponse(content={"summary": last_summary})
 
-    # 표지
-    slide = prs.slides.add_slide(prs.slide_layouts[0])
-    slide.shapes.title.text = f"{topic} 보고서"
-    slide.placeholders[1].text = "자동 생성된 AI 보고서"
+@app.get("/download_summary")
+def download_summary(format: str):
+    global last_summary
+    if not last_summary:
+        return JSONResponse(content={"error": "No summary available"}, status_code=400)
 
-    # 본문 (텍스트만 추가)
-    for section in sections:
-        text = generate_text(topic, section)
+    if format == "docx":
+        doc = Document()
+        doc.add_heading("문서 요약", level=1)
+        doc.add_paragraph(last_summary)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+        doc.save(tmp.name)
+        return FileResponse(tmp.name, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename="summary.docx")
 
-        slide = prs.slides.add_slide(prs.slide_layouts[1])
-        slide.shapes.title.text = section
-        slide.placeholders[1].text = text
+    elif format == "pptx":
+        prs = Presentation()
+        slide = prs.slides.add_slide(prs.slide_layouts[0])
+        slide.shapes.title.text = "문서 요약"
+        slide.placeholders[1].text = last_summary
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
+        prs.save(tmp.name)
+        return FileResponse(tmp.name, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation", filename="summary.pptx")
 
-    # 파일 반환
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
-    prs.save(tmp.name)
-    return FileResponse(
-        tmp.name,
-        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        filename=f"{topic}_보고서.pptx"
-    )
+    return JSONResponse(content={"error": "Invalid format"}, status_code=400)
