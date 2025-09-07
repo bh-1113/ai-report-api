@@ -18,6 +18,16 @@ app = FastAPI()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # ======================================
+# 0) 루트 엔드포인트 (health check)
+# ======================================
+@app.get("/")
+def root():
+    return {
+        "message": "AI Report API is running 🚀",
+        "endpoints": ["/make_ppt", "/upload_summary"]
+    }
+
+# ======================================
 # 1) 보고서 자동 생성 (report.html → /make_ppt)
 # ======================================
 sections = ["개요", "필요성", "활용 사례", "장점과 한계", "미래 전망"]
@@ -99,7 +109,6 @@ def extract_text(file: UploadFile):
     os.remove(tmp_path)
     return text.strip()
 
-
 def gpt_summarize(text: str) -> str:
     prompt = f"""
     다음 문서를 간결하게 요약해 주세요. 
@@ -116,13 +125,11 @@ def gpt_summarize(text: str) -> str:
     )
     return response.choices[0].message.content.strip()
 
-
 def save_as_docx(summary: str, filename: str):
     doc = Document()
     doc.add_heading("문서 요약", level=1)
     doc.add_paragraph(summary)
     doc.save(filename)
-
 
 def save_as_pptx(summary: str, filename: str):
     prs = Presentation()
@@ -141,7 +148,6 @@ def save_as_pptx(summary: str, filename: str):
     content.text = summary
 
     prs.save(filename)
-
 
 @app.post("/upload_summary")
 async def upload_summary(file: UploadFile = File(...), export: str = Form("json")):
