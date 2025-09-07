@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse
 from pptx import Presentation
 from pptx.util import Inches
@@ -20,7 +20,7 @@ def generate_text(topic, section):
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}]
     )
-    return response.choices[0].message.content
+    return response.choices[0].message.content.strip()
 
 # DALL·E를 이용해 이미지 생성
 def generate_image(topic, section):
@@ -33,13 +33,14 @@ def generate_image(topic, section):
     return response.data[0].url
 
 @app.get("/make_ppt")
-def make_ppt(topic: str):
+def make_ppt(topic: str = Query(..., description="보고서 주제")):
     prs = Presentation()
 
     # 표지
-    slide = prs.slides.add_slide(prs.slide_layouts[0])
-    slide.shapes.title.text = f"{topic} 보고서"
-    slide.placeholders[1].text = "자동 생성된 AI 보고서"
+    cover = prs.slides.add_slide(prs.slide_layouts[0])
+    cover.shapes.title.text = f"{topic} 보고서"
+    if len(cover.placeholders) > 1:
+        cover.placeholders[1].text = "자동 생성된 AI 보고서"
 
     # 본문
     for section in sections:
@@ -48,18 +49,25 @@ def make_ppt(topic: str):
 
         slide = prs.slides.add_slide(prs.slide_layouts[1])
         slide.shapes.title.text = section
-        slide.placeholders[1].text = text
+
+        if len(slide.placeholders) > 1:
+            slide.placeholders[1].text = text
 
         # 이미지 삽입
         img_data = requests.get(image_url).content
         tmp_img = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
         tmp_img.write(img_data)
         tmp_img.close()
+
         slide.shapes.add_picture(tmp_img.name, Inches(5), Inches(2), Inches(3), Inches(3))
 
-    # 파일 반환
+        # 임시 이미지 파일 삭제
+        os.unlink(tmp_img.name)
+
+    # 파일 저장 및 반환
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
     prs.save(tmp.name)
+
     return FileResponse(
         tmp.name,
         media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
