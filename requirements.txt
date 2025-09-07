@@ -1,5 +1,9 @@
 fastapi
 uvicorn
-python-pptx
 requests
 openai
+python-pptx
+python-docx
+PyPDF2
+pandas
+openpyxl
