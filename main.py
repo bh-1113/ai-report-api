@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from pptx import Presentation
 from pptx.util import Inches
-import tempfile, os, requests
+import tempfile, os
 from openai import OpenAI
 
 app = FastAPI()
@@ -22,16 +22,6 @@ def generate_text(topic, section):
     )
     return response.choices[0].message.content
 
-# DALL·E를 이용해 이미지 생성
-def generate_image(topic, section):
-    prompt = f"{topic} - {section} 발표 슬라이드용 삽화"
-    response = client.images.generate(
-        model="gpt-image-1",
-        prompt=prompt,
-        size="1024x1024"   # ✅ 수정됨
-    )
-    return response.data[0].url
-
 @app.get("/make_ppt")
 def make_ppt(topic: str):
     prs = Presentation()
@@ -41,21 +31,13 @@ def make_ppt(topic: str):
     slide.shapes.title.text = f"{topic} 보고서"
     slide.placeholders[1].text = "자동 생성된 AI 보고서"
 
-    # 본문
+    # 본문 (텍스트만 추가)
     for section in sections:
         text = generate_text(topic, section)
-        image_url = generate_image(topic, section)
 
         slide = prs.slides.add_slide(prs.slide_layouts[1])
         slide.shapes.title.text = section
         slide.placeholders[1].text = text
-
-        # 이미지 삽입
-        img_data = requests.get(image_url).content
-        tmp_img = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-        tmp_img.write(img_data)
-        tmp_img.close()
-        slide.shapes.add_picture(tmp_img.name, Inches(5), Inches(2), Inches(3), Inches(3))
 
     # 파일 반환
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
