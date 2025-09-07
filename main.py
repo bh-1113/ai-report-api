@@ -1,44 +1,27 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI
 from fastapi.responses import FileResponse
+import os
 from pptx import Presentation
 
 app = FastAPI()
 
-@app.get("/")
-def home():
-    return {"message": "AI 보고서 생성 API 입니다. /make_ppt?topic=주제 형태로 호출하세요."}
-
 @app.get("/make_ppt")
-def make_ppt(topic: str = Query(..., description="보고서 주제")):
+def make_ppt(topic: str):
     prs = Presentation()
-
-    # 제목 슬라이드
     slide_layout = prs.slide_layouts[0]
     slide = prs.slides.add_slide(slide_layout)
     title = slide.shapes.title
     subtitle = slide.placeholders[1]
-    title.text = f"{topic} 보고서"
-    subtitle.text = "자동 생성된 PowerPoint 파일"
 
-    # 예시 본문 슬라이드
-    contents = [
-        f"{topic} 개요",
-        f"{topic} 활용 사례",
-        f"{topic} 장점과 한계",
-        f"{topic} 미래 전망"
-    ]
+    title.text = topic
+    subtitle.text = f"{topic}에 대한 자동 생성 보고서"
 
-    for content in contents:
-        slide_layout = prs.slide_layouts[1]
-        slide = prs.slides.add_slide(slide_layout)
-        slide.shapes.title.text = content
-        slide.placeholders[1].text = f"{content}에 대한 설명이 자동 생성됩니다."
+    filename = "report.pptx"
+    prs.save(filename)
+    return FileResponse(filename, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation", filename=filename)
 
-    file_name = "report.pptx"
-    prs.save(file_name)
-
-    return FileResponse(
-        file_name,
-        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        filename=file_name
-    )
+# Render에서 포트 환경 변수 사용
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))  # Render 환경에 맞춤
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
