@@ -1,11 +1,11 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 
-import os, tempfile, requests
+import os, tempfile
 from pptx import Presentation
 from pptx.util import Inches
-
 from PyPDF2 import PdfReader
 import docx
 import pandas as pd
@@ -13,6 +13,15 @@ from docx import Document
 
 # FastAPI 앱
 app = FastAPI()
+
+# ✅ CORS 허용 (테스트용: 모든 도메인 허용)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   # 배포 시 특정 도메인만 넣는 게 안전함
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # OpenAI 클라이언트
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -52,7 +61,6 @@ def make_ppt(topic: str):
     # 본문
     for section in sections:
         text = generate_text(topic, section)
-
         slide = prs.slides.add_slide(prs.slide_layouts[1])
         slide.shapes.title.text = section
         slide.placeholders[1].text = text
@@ -81,7 +89,9 @@ def extract_text(file: UploadFile):
     if ext == "pdf":
         reader = PdfReader(tmp_path)
         for page in reader.pages:
-            text += page.extract_text() + "\n"
+            page_text = page.extract_text()
+            if page_text:  # ✅ None 방지
+                text += page_text + "\n"
 
     elif ext == "docx":
         doc = docx.Document(tmp_path)
