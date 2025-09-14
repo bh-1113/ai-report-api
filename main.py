@@ -3,8 +3,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 
-import os
-import tempfile
+import os, tempfile
 from pptx import Presentation
 from PyPDF2 import PdfReader
 import docx
@@ -17,7 +16,7 @@ app = FastAPI()
 # 🔹 CORS 허용 (GitHub Pages 주소만)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://bh-1113.github.io"],
+    allow_origins=["https://bh-1113.github.io"],  # GitHub Pages 도메인
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -58,12 +57,9 @@ def make_ppt(topic: str):
     slide.shapes.title.text = f"{topic} 보고서"
     slide.placeholders[1].text = "자동 생성된 AI 보고서"
 
-    all_text = ""  # 웹페이지용 미리보기 텍스트
-
     # 본문
     for section in sections:
         text = generate_text(topic, section)
-        all_text += f"{section}\n{text}\n\n"
 
         slide = prs.slides.add_slide(prs.slide_layouts[1])
         slide.shapes.title.text = section
@@ -73,21 +69,11 @@ def make_ppt(topic: str):
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pptx")
     prs.save(tmp.name)
 
-    return JSONResponse({
-        "preview": all_text.strip(),
-        "ppt_url": f"/download_ppt/{os.path.basename(tmp.name)}"
-    })
-
-@app.get("/download_ppt/{filename}")
-def download_ppt(filename: str):
-    path = os.path.join(tempfile.gettempdir(), filename)
-    if os.path.exists(path):
-        return FileResponse(
-            path,
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            filename=filename
-        )
-    return JSONResponse({"error": "파일이 존재하지 않습니다."})
+    return FileResponse(
+        tmp.name,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        filename=f"{topic}_보고서.pptx"
+    )
 
 # ======================================
 # 2) 문서 요약 (summary.html → /upload_summary)
@@ -139,6 +125,7 @@ def gpt_summarize(text: str) -> str:
     문서:
     {text[:4000]}
     """
+
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
@@ -172,18 +159,25 @@ def save_as_pptx(summary: str, filename: str):
 
 @app.post("/upload_summary")
 async def upload_summary(file: UploadFile = File(...), export: str = Form("json")):
+    # 1) 텍스트 추출
     text = extract_text(file)
+
+    # 2) GPT 요약
     summary = gpt_summarize(text)
 
+    # 3) 응답 처리
     if export == "json":
         return JSONResponse({"summary": summary})
+
     elif export == "docx":
         tmp_path = "summary.docx"
         save_as_docx(summary, tmp_path)
         return FileResponse(tmp_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename="summary.docx")
+
     elif export == "pptx":
         tmp_path = "summary.pptx"
         save_as_pptx(summary, tmp_path)
         return FileResponse(tmp_path, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation", filename="summary.pptx")
+
     else:
         return JSONResponse({"error": "지원하지 않는 export 형식입니다."})
