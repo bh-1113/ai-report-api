@@ -1,6 +1,5 @@
 fastapi
 uvicorn
-requests
 openai
 python-pptx
 python-docx
